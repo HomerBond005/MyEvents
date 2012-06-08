@@ -1,0 +1,8 @@
+name: MyEvents
+main: de.HomerBond005.MyEvents.MyEvents
+author: HomerBond005
+version: 1.0
+commands:
+    event:
+        description: Main Command.
+        usage: Type /<command> help for help.
