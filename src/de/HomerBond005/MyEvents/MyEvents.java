@@ -26,9 +26,6 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.mcstats.Metrics.Metrics;
-import de.HomerBond005.Permissions.PermissionsChecker;
-import de.HomerBond005.Updater.Updater;
 
 public class MyEvents extends JavaPlugin{
 	private Map<String,Event> events;
@@ -38,8 +35,10 @@ public class MyEvents extends JavaPlugin{
 	private Texts T;
 	private String local;
 	private Updater updater;
+	
 	@Override
 	public void onEnable(){
+		log = getLogger();
 		File de = new File(getDataFolder()+File.separator+"de.yml");
 		if(!de.exists()){
 			try {
@@ -62,18 +61,18 @@ public class MyEvents extends JavaPlugin{
 			} catch (InvalidConfigurationException e) {
 			}
 		}
-		this.getConfig().options().copyDefaults(true);
-		this.saveConfig();
-		log = getLogger();
+		getConfig().options().copyDefaults(true);
+		saveConfig();
+		reloadConfig();
 		pc = new PermissionsChecker(this, true);
 		events = new HashMap<String,Event>();
 		if(!getConfig().isSet("Language")){
 			getConfig().set("Language", "en");
-			this.saveConfig();
+			saveConfig();
 		}
 		if(!getConfig().isSet("Events")){
 			getConfig().set("Events", new HashMap<String,Object>());
-			this.saveConfig();
+			saveConfig();
 		}
 		local = getConfig().getString("Language");
 		T = new Texts(YamlConfiguration.loadConfiguration(new File(this.getDataFolder()+File.separator+local+".yml")));
@@ -104,9 +103,9 @@ public class MyEvents extends JavaPlugin{
 		try {
 			metrics = new Metrics(this);
 			String local;
-			if(this.local == "de"){
+			if(this.local.equalsIgnoreCase("de")){
 				local = "German";
-			}else if(this.local == "en"){
+			}else if(this.local.equalsIgnoreCase("en")){
 				local = "English";
 			}else{
 				local = "Other";
@@ -125,11 +124,13 @@ public class MyEvents extends JavaPlugin{
 		getServer().getPluginManager().registerEvents(updater, this);
 		log.log(Level.INFO, "is enabled!");
 	}
+	
 	@Override
 	public void onDisable(){
 		saveToYAML();
 		log.log(Level.INFO, "is disabled!");
 	}
+	
 	private void handlePlayerLoginMsgs(Player player){
 		for(Event e : events.values()){
 			if(e.isParticipant(player.getName()))
@@ -141,6 +142,7 @@ public class MyEvents extends JavaPlugin{
 				}
 		}
 	}
+	
 	@Override
 	public boolean onCommand(CommandSender sender, Command command, String label, String[] args){
 		Player player;
@@ -392,12 +394,14 @@ public class MyEvents extends JavaPlugin{
 		}
 		return true;
 	}
+	
 	private String getLastPartOfArray(String[] arr, int beginIndex){
 		String temp = "";
 		for(int i = beginIndex; i < arr.length; i++)
 			temp += arr[i] + " ";
 		return temp;
 	}
+	
 	private void saveToYAML(){
 		getConfig().set("Events", null);
 		for(Entry<String, Event> l : events.entrySet()){
@@ -415,6 +419,7 @@ public class MyEvents extends JavaPlugin{
 		}
 		saveConfig();
 	}
+	
 	private void checkPlayerNotifications(){
 		for(Event e : events.values()){
 			if(e.isRunning()){
@@ -422,6 +427,7 @@ public class MyEvents extends JavaPlugin{
 			}
 		}
 	}
+	
 	private void notifyPlayers(Event e){
 		LinkedList<String> players = e.getParticipants();
 		for(String player : players){

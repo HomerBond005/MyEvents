@@ -1,4 +1,4 @@
-package org.mcstats.Metrics;
+package de.HomerBond005.MyEvents;
 
 /*
  * Copyright 2011 Tyler Blair. All rights reserved.

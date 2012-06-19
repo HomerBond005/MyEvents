@@ -1,7 +1,7 @@
 name: MyEvents
 main: de.HomerBond005.MyEvents.MyEvents
 author: HomerBond005
-version: 1.0
+version: 1.0.1
 commands:
     event:
         description: Main Command.

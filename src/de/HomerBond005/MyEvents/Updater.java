@@ -4,7 +4,7 @@
  *  Published under CC BY-NC-ND 3.0
  *  http://creativecommons.org/licenses/by-nc-nd/3.0/
  */
-package de.HomerBond005.Updater;
+package de.HomerBond005.MyEvents;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -26,12 +26,12 @@ public class Updater implements Listener{
 	public Updater(JavaPlugin plugin){
 		desc = plugin.getDescription();
 		try {
-			URL connect = new URL("http://homerbond005.bplaced.net/update.php?p="+plugin.getName());
+			URL connect = new URL("http://homerbond005.bplaced.net/update.php?p="+desc.getName());
 			BufferedReader in = new BufferedReader(new InputStreamReader(connect.openStream()));
 			String version = in.readLine();
 			in.close();
-			if(!version.equalsIgnoreCase(plugin.getDescription().getVersion())){
-				plugin.getLogger().log(Level.WARNING, "New version available! Your version: '"+plugin.getDescription().getVersion()+"' New Version: '"+version+"' Please visit bukkit.org to update.");
+			if(!version.equalsIgnoreCase(desc.getVersion())){
+				plugin.getLogger().log(Level.WARNING, "New version of '"+desc.getName()+"' available! Your version: '"+desc.getVersion()+"' New Version: '"+version+"' Please visit bukkit.org to update.");
 				opUpdateMsg = version;
 			}
 		} catch (MalformedURLException e) {
