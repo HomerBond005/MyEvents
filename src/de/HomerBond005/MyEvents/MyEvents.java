@@ -26,9 +26,16 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.plugin.java.JavaPlugin;
+import de.HomerBond005.MyEvents.API.EventCreatedEvent;
+import de.HomerBond005.MyEvents.API.EventDestroyedEvent;
+import de.HomerBond005.MyEvents.API.EventStartedEvent;
+import de.HomerBond005.MyEvents.API.EventStoppedEvent;
+import de.HomerBond005.MyEvents.API.PlayerLogOffEventEvent;
+import de.HomerBond005.MyEvents.API.PlayerLogOnEventEvent;
+import de.HomerBond005.MyEvents.API.PlayerTeleportEventEvent;
 
 public class MyEvents extends JavaPlugin{
-	private Map<String,Event> events;
+	private HashMap<String,EventStorage> events;
 	private Logger log;
 	private PermissionsChecker pc;
 	private Metrics metrics;
@@ -65,7 +72,7 @@ public class MyEvents extends JavaPlugin{
 		saveConfig();
 		reloadConfig();
 		pc = new PermissionsChecker(this, true);
-		events = new HashMap<String,Event>();
+		events = new HashMap<String,EventStorage>();
 		if(!getConfig().isSet("Language")){
 			getConfig().set("Language", "en");
 			saveConfig();
@@ -75,14 +82,14 @@ public class MyEvents extends JavaPlugin{
 			saveConfig();
 		}
 		local = getConfig().getString("Language");
-		T = new Texts(YamlConfiguration.loadConfiguration(new File(this.getDataFolder()+File.separator+local+".yml")));
+		T = new Texts(YamlConfiguration.loadConfiguration(new File(getDataFolder()+File.separator+local+".yml")));
 		try{
 			Set<String> evs = getConfig().getConfigurationSection("Events").getKeys(false);
 			for(String ev : evs){
 				ConfigurationSection read = getConfig().getConfigurationSection("Events."+ev);
 				long time = read.getLong("time");
 				int duration = read.getInt("duration", 10);
-				Event e = new Event(read.getString("creator"), ev, time, new Location(getServer().getWorld(read.getString("locWorld")), read.getDouble("locX"), read.getDouble("locY"), read.getDouble("locZ")), read.getString("desc"), duration);
+				EventStorage e = new EventStorage(read.getString("creator"), ev, time, new Location(getServer().getWorld(read.getString("locWorld")), read.getDouble("locX"), read.getDouble("locY"), read.getDouble("locZ")), read.getString("desc"), duration);
 				e.addParticipants(read.getStringList("participants"));
 				events.put(ev, e);
 			}
@@ -102,15 +109,15 @@ public class MyEvents extends JavaPlugin{
 		}, 0L, 600L);
 		try {
 			metrics = new Metrics(this);
-			String local;
-			if(this.local.equalsIgnoreCase("de")){
-				local = "German";
-			}else if(this.local.equalsIgnoreCase("en")){
-				local = "English";
+			String localString;
+			if(local.equalsIgnoreCase("de")){
+				localString = "German";
+			}else if(local.equalsIgnoreCase("en")){
+				localString = "English";
 			}else{
-				local = "Other";
+				localString = "Other";
 			}
-			metrics.addCustomData(new Metrics.Plotter(local) {
+			metrics.addCustomData(new Metrics.Plotter(localString) {
 				@Override
 				public int getValue() {
 					return 1;
@@ -123,24 +130,13 @@ public class MyEvents extends JavaPlugin{
 		updater = new Updater(this);
 		getServer().getPluginManager().registerEvents(updater, this);
 		log.log(Level.INFO, "is enabled!");
+		getServer().getPluginManager().isPluginEnabled("");
 	}
 	
 	@Override
 	public void onDisable(){
 		saveToYAML();
 		log.log(Level.INFO, "is disabled!");
-	}
-	
-	private void handlePlayerLoginMsgs(Player player){
-		for(Event e : events.values()){
-			if(e.isParticipant(player.getName()))
-				if(e.isRunning()){
-					if(!e.hasTeleported(player.getName())){
-						player.sendMessage(ChatColor.DARK_PURPLE+""+T.notification_start+" "+ChatColor.RED+e.getName());
-						player.sendMessage(ChatColor.LIGHT_PURPLE+T.tpwith+" /event "+T.teleport+" "+e.getName());
-					}
-				}
-		}
 	}
 	
 	@Override
@@ -158,7 +154,7 @@ public class MyEvents extends JavaPlugin{
 		}
 		if(command.getName().equalsIgnoreCase("event")){
 			if(args[0].equalsIgnoreCase(T.help)){
-				player.sendMessage(ChatColor.YELLOW+this.getName()+": "+T.help);
+				player.sendMessage(ChatColor.YELLOW+getName()+": "+T.help);
 				player.sendMessage(ChatColor.YELLOW+"-----------------------------------------------------");
 				player.sendMessage(ChatColor.YELLOW+"/event ...");
 				player.sendMessage(ChatColor.RED+"... "+T.list+ChatColor.GREEN+"    "+T.help_list);
@@ -172,7 +168,7 @@ public class MyEvents extends JavaPlugin{
 			}else if(args[0].equalsIgnoreCase(T.create)){
 				if(pc.has(player, "MyEvents.event.create"))
 					if(args.length >= 6){
-						if(!events.containsKey(args[1])){
+						if(!eventExists(args[1])){
 							String name = args[1];
 							int dayOfMonth,month,year,hourOfDay,minute,duration;
 							try{
@@ -192,7 +188,9 @@ public class MyEvents extends JavaPlugin{
 								player.sendMessage(ChatColor.RED+T.wrongargs+" /event "+T.create+" "+args[1]+" <dd.mm.yyyy hh:mm> <"+T.duration+">"+getLastPartOfArray(args, 5));
 								return true;
 							}
-							events.put(name, new Event(player.getName(), name, new GregorianCalendar(year, month, dayOfMonth, hourOfDay, minute), player.getLocation(), getLastPartOfArray(args, 5), duration));
+							EventStorage created =  new EventStorage(player.getName(), name, new GregorianCalendar(year, month, dayOfMonth, hourOfDay, minute), player.getLocation(), getLastPartOfArray(args, 5), duration);
+							events.put(name, created);
+							getServer().getPluginManager().callEvent(new EventCreatedEvent(created, System.currentTimeMillis()));
 							player.sendMessage(ChatColor.GREEN+T.created);
 						}else
 							player.sendMessage(ChatColor.RED+T.alreadyexists);
@@ -203,8 +201,8 @@ public class MyEvents extends JavaPlugin{
 			}else if(args[0].equalsIgnoreCase(T.destroy)){
 				if(pc.has(player, "MyEvents.event.destroy"))
 					if(args.length >= 2){
-						if(events.containsKey(args[1])){
-							events.remove(args[1]);
+						if(eventExists(args[1])){
+							getServer().getPluginManager().callEvent(new EventDestroyedEvent(events.remove(args[1]), System.currentTimeMillis()));
 							player.sendMessage(ChatColor.GREEN+T.destroyed);
 						}else
 							player.sendMessage(ChatColor.RED+T.doesntexist);
@@ -217,7 +215,7 @@ public class MyEvents extends JavaPlugin{
 					if(args.length >= 2){
 						if(args[2].equalsIgnoreCase(T.dateEdit)){
 							if(args.length >= 3){
-								if(events.containsKey(args[1])){
+								if(eventExists(args[1])){
 									int dayOfMonth,month,year,hourOfDay,minute;
 									try{
 										dayOfMonth = Integer.parseInt(args[3].split("\\.")[0]);
@@ -243,7 +241,7 @@ public class MyEvents extends JavaPlugin{
 								player.sendMessage(ChatColor.RED+T.moreargs+" /event "+T.edit+" <"+T.name+"> "+T.dateEdit+" <"+T.value+">");
 						}else if(args[2].equalsIgnoreCase(T.desc)){
 							if(args.length >= 3)
-								if(events.containsKey(args[1])){
+								if(eventExists(args[1])){
 									events.get(args[1]).setDesc(getLastPartOfArray(args, 3));
 									System.out.println(getLastPartOfArray(args, 3));
 									player.sendMessage(ChatColor.GREEN+T.changed);
@@ -252,14 +250,14 @@ public class MyEvents extends JavaPlugin{
 							else
 								player.sendMessage(ChatColor.RED+T.moreargs+" /event "+T.edit+" <"+T.name+"> "+T.desc+" <"+T.value+">");
 						}else if(args[2].equalsIgnoreCase(T.location)){
-							if(events.containsKey(args[1])){
+							if(eventExists(args[1])){
 								events.get(args[1]).setLocation(player.getLocation());
 								player.sendMessage(ChatColor.GREEN+T.locationset);
 							}else
 								player.sendMessage(ChatColor.RED+T.doesntexist);
 						}else if(args[2].equalsIgnoreCase(T.duration)){
 							if(args.length >= 3)
-								if(events.containsKey(args[1])){
+								if(eventExists(args[1])){
 									events.get(args[1]).setDuration(Integer.parseInt(args[3]));
 									player.sendMessage(ChatColor.GREEN+T.changed);
 								}else
@@ -274,8 +272,8 @@ public class MyEvents extends JavaPlugin{
 			}else if(args[0].equalsIgnoreCase(T.info)){
 				if(pc.has(player, "MyEvents.event.info"))
 					if(args.length >= 2){
-						if(events.containsKey(args[1])){
-							Event e = events.get(args[1]);
+						if(eventExists(args[1])){
+							EventStorage e = events.get(args[1]);
 							player.sendMessage(ChatColor.YELLOW+T.eventinfo+ChatColor.RED+e.getName()+ChatColor.YELLOW+" "+T.by+" "+ChatColor.RED+e.getCreator());
 							player.sendMessage(ChatColor.YELLOW+"-----------------------------------------------------");
 							player.sendMessage(ChatColor.YELLOW+T.desc+": "+ChatColor.RED+e.getDesc());
@@ -299,14 +297,18 @@ public class MyEvents extends JavaPlugin{
 			}else if(args[0].equalsIgnoreCase(T.teleport)){
 				if(pc.has(player, "MyEvents.event.teleport"))
 					if(args.length >= 2){
-						if(events.containsKey(args[1])){
-							Event e = events.get(args[1]);
+						if(eventExists(args[1])){
+							EventStorage e = events.get(args[1]);
 							if(e.isRunning())
 								if(e.isParticipant(player.getName()))
 									if(!e.hasTeleported(player.getName())){
-										e.playerTeleported(player.getName());
-										player.teleport(e.getLocation());
-										player.sendMessage(ChatColor.GREEN+T.teleported);
+										PlayerTeleportEventEvent eventSend = new PlayerTeleportEventEvent(e, System.currentTimeMillis(), player);
+										getServer().getPluginManager().callEvent(eventSend);
+										if(!eventSend.isCancelled()){
+											e.playerTeleported(player.getName());
+											player.teleport(e.getLocation());
+											player.sendMessage(ChatColor.GREEN+T.teleported);
+										}
 									}else
 										player.sendMessage(ChatColor.RED+T.alreadyteleported);
 								else
@@ -322,12 +324,16 @@ public class MyEvents extends JavaPlugin{
 			}else if(args[0].equalsIgnoreCase(T.logon)){
 				if(pc.has(player, "MyEvents.event.logon"))
 					if(args.length >= 2){
-						if(events.containsKey(args[1])){
-							Event e = events.get(args[1]);
+						if(eventExists(args[1])){
+							EventStorage e = events.get(args[1]);
 							if(!e.isRunning()){
 								if(!e.isParticipant(player.getName())){
-									e.addParticipant(player.getName());
-									player.sendMessage(ChatColor.GREEN+T.participating);
+									PlayerLogOnEventEvent eventSend = new PlayerLogOnEventEvent(e, System.currentTimeMillis(), player);
+									getServer().getPluginManager().callEvent(eventSend);
+									if(!eventSend.isCancelled()){
+										e.addParticipant(player.getName());
+										player.sendMessage(ChatColor.GREEN+T.participating);
+									}
 								}else
 									player.sendMessage(ChatColor.RED+T.alreadyparticipating);
 							}else
@@ -341,11 +347,15 @@ public class MyEvents extends JavaPlugin{
 			}else if(args[0].equalsIgnoreCase(T.logoff)){
 				if(pc.has(player, "MyEvents.event.logoff"))
 					if(args.length >= 2){
-						if(events.containsKey(args[1])){
-							Event e = events.get(args[1]);
+						if(eventExists(args[1])){
+							EventStorage e = events.get(args[1]);
 							if(e.isParticipant(player.getName())){
-								e.removeParticipant(player.getName());
-								player.sendMessage(ChatColor.GREEN+T.notparticipatinganymore);
+								PlayerLogOffEventEvent eventSend = new PlayerLogOffEventEvent(e, System.currentTimeMillis(), player);
+								getServer().getPluginManager().callEvent(eventSend);
+								if(!eventSend.isCancelled()){
+									e.removeParticipant(player.getName());
+									player.sendMessage(ChatColor.GREEN+T.notparticipatinganymore);
+								}
 							}else
 								player.sendMessage(ChatColor.RED+T.notparticipating);
 						}else
@@ -356,10 +366,10 @@ public class MyEvents extends JavaPlugin{
 					pc.sendNoPermMsg(player);
 			}else if(args[0].equalsIgnoreCase(T.list)){
 				if(pc.has(player, "MyEvents.event.list")){
-					ArrayList<Event> evs = new ArrayList<Event>(events.values());
-					Collections.sort(evs, new Comparator<Event>(){
+					ArrayList<EventStorage> evs = new ArrayList<EventStorage>(events.values());
+					Collections.sort(evs, new Comparator<EventStorage>(){
 						@Override
-						public int compare(Event o1, Event o2){
+						public int compare(EventStorage o1, EventStorage o2){
 							if(o1.getTime().getTimeInMillis() < o2.getTime().getTimeInMillis()){
 								return 1;
 							}else if(o1.getTime().getTimeInMillis() > o2.getTime().getTimeInMillis()){
@@ -371,7 +381,7 @@ public class MyEvents extends JavaPlugin{
 					});
 					player.sendMessage(ChatColor.YELLOW+T.listheader);
 					int i = 0;
-					for(Event e : evs){
+					for(EventStorage e : evs){
 						player.sendMessage(ChatColor.YELLOW+""+i+": "+ChatColor.RED+e.getName()+" "+ChatColor.YELLOW+T.by+" "+ChatColor.RED+e.getCreator());
 						i++;
 					}
@@ -381,7 +391,7 @@ public class MyEvents extends JavaPlugin{
 			}else if(args[0].equalsIgnoreCase(T.participants)){
 				if(pc.has(player, "MyEvents.event.participants"))
 					if(args.length >= 2){
-						if(events.containsKey(args[1])){
+						if(eventExists(args[1])){
 							player.sendMessage(ChatColor.YELLOW+T.participantslist);
 							player.sendMessage(ChatColor.GREEN+events.get(args[1]).getParticipants().toString());
 						}else
@@ -395,6 +405,18 @@ public class MyEvents extends JavaPlugin{
 		return true;
 	}
 	
+	private void handlePlayerLoginMsgs(Player player){
+		for(EventStorage e : events.values()){
+			if(e.isParticipant(player.getName()))
+				if(e.isRunning()){
+					if(!e.hasTeleported(player.getName())){
+						player.sendMessage(ChatColor.DARK_PURPLE+""+T.notification_start+" "+ChatColor.RED+e.getName());
+						player.sendMessage(ChatColor.LIGHT_PURPLE+T.tpwith+" /event "+T.teleport+" "+e.getName());
+					}
+				}
+		}
+	}
+	
 	private String getLastPartOfArray(String[] arr, int beginIndex){
 		String temp = "";
 		for(int i = beginIndex; i < arr.length; i++)
@@ -402,33 +424,21 @@ public class MyEvents extends JavaPlugin{
 		return temp;
 	}
 	
-	private void saveToYAML(){
-		getConfig().set("Events", null);
-		for(Entry<String, Event> l : events.entrySet()){
-			Event e = l.getValue();
-			getConfig().set("Events."+e.getName()+".desc", e.getDesc());
-			getConfig().set("Events."+e.getName()+".creator", e.getCreator());
-			getConfig().set("Events."+e.getName()+".locX", e.getLocation().getX());
-			getConfig().set("Events."+e.getName()+".locY", e.getLocation().getY());
-			getConfig().set("Events."+e.getName()+".locZ", e.getLocation().getZ());
-			getConfig().set("Events."+e.getName()+".locWorld", e.getLocation().getWorld().getName());
-			GregorianCalendar c = e.getTime();
-			getConfig().set("Events."+e.getName()+".time", c.getTimeInMillis());
-			getConfig().set("Events."+e.getName()+".duration", e.getDuration());
-			getConfig().set("Events."+e.getName()+".participants", e.getParticipants());
-		}
-		saveConfig();
-	}
-	
 	private void checkPlayerNotifications(){
-		for(Event e : events.values()){
+		for(EventStorage e : events.values()){
 			if(e.isRunning()){
 				notifyPlayers(e);
-			}
+				if(!e.hasEventSent("STARTED")){
+					getServer().getPluginManager().callEvent(new EventStartedEvent(e, System.currentTimeMillis()));
+				}
+			}else
+				if(e.hasEventSent("STARTED")&&!e.hasEventSent("STOPPED")){
+					getServer().getPluginManager().callEvent(new EventStoppedEvent(e, System.currentTimeMillis()));
+				}
 		}
 	}
 	
-	private void notifyPlayers(Event e){
+	private void notifyPlayers(EventStorage e){
 		LinkedList<String> players = e.getParticipants();
 		for(String player : players){
 			OfflinePlayer pl = getServer().getOfflinePlayer(player);
@@ -438,5 +448,91 @@ public class MyEvents extends JavaPlugin{
 				plO.sendMessage(ChatColor.LIGHT_PURPLE+T.tpwith+" /event "+T.teleport+" "+e.getName());
 			}
 		}
+	}
+	
+	/**
+	 * Save the events to the config (Overrides the changes made in config.yml)
+	 */
+	public void saveToYAML(){
+		reloadConfig();
+		getConfig().set("Events", null);
+		for(Entry<String, EventStorage> l : events.entrySet()){
+			EventStorage e = l.getValue();
+			getConfig().set("Events."+e.getName()+".desc", e.getDesc());
+			getConfig().set("Events."+e.getName()+".creator", e.getCreator());
+			getConfig().set("Events."+e.getName()+".locX", e.getLocation().getX());
+			getConfig().set("Events."+e.getName()+".locY", e.getLocation().getY());
+			getConfig().set("Events."+e.getName()+".locZ", e.getLocation().getZ());
+			getConfig().set("Events."+e.getName()+".locWorld", e.getLocation().getWorld().getName());
+			getConfig().set("Events."+e.getName()+".time", e.getTime().getTimeInMillis());
+			getConfig().set("Events."+e.getName()+".duration", e.getDuration());
+			getConfig().set("Events."+e.getName()+".participants", e.getParticipants());
+		}
+		saveConfig();
+	}
+
+	/**
+	 * Get all registered events
+	 * @return A map with the event name as key and the EventStorage object as value
+	 */
+	public Map<String, EventStorage> getEvents(){
+		return events;
+	}
+	
+	/**
+	 * Check if an event exists
+	 * @param name The name of the event
+	 * @return A boolean that indicates if the event exists
+	 */
+	public boolean eventExists(String name){
+		return events.containsKey(name);
+	}
+	
+	/**
+	 * Check if a player has a permission using the build-in permission checker
+	 * @param player
+	 * @param perm
+	 * @return
+	 */
+	public boolean hasPerm(Player player, String perm){
+		return pc.has(player, perm);
+	}
+	
+	/**
+	 * Get an EventStorage object by it's name
+	 * @param name The name of the event
+	 * @return If the event existsAn EventStorage object , else null
+	 */
+	public EventStorage getEvent(String name){
+		if(events.containsKey(name))
+			return events.get(name);
+		return null;
+	}
+	
+	/**
+	 * Register/add event
+	 * @param event The event that should be registered/added
+	 * @return False, if the event already exists, else true
+	 */
+	public boolean addEvent(EventStorage event){
+		if(events.containsKey(event.getName()))
+			return false;
+		else{
+			events.put(event.getName(), event);
+			return true;
+		}
+	}
+	
+	/**
+	 * Unregister/remove event
+	 * @param event The event that should be unregistered/removed
+	 * @return True, if the event existed, else false
+	 */
+	public boolean removeEvent(EventStorage event){
+		if(events.containsKey(event.getName())){
+			events.remove(event);
+			return true;
+		}else
+			return false;
 	}
 }
