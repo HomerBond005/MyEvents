@@ -17,8 +17,6 @@ import org.bukkit.OfflinePlayer;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.ConfigurationSection;
-import org.bukkit.configuration.InvalidConfigurationException;
-import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -46,28 +44,6 @@ public class MyEvents extends JavaPlugin{
 	@Override
 	public void onEnable(){
 		log = getLogger();
-		File de = new File(getDataFolder()+File.separator+"de.yml");
-		if(!de.exists()){
-			try {
-				de.createNewFile();
-				FileConfiguration deConf = YamlConfiguration.loadConfiguration(de);
-				deConf.load(getResource("de.yml"));
-				deConf.save(de);
-			} catch (IOException e) {
-			} catch (InvalidConfigurationException e) {
-			}
-		}
-		File en = new File(getDataFolder()+File.separator+"en.yml");
-		if(!en.exists()){
-			try {
-				en.createNewFile();
-				FileConfiguration enConf = YamlConfiguration.loadConfiguration(en);
-				enConf.load(getResource("en.yml"));
-				enConf.save(en);
-			} catch (IOException e) {
-			} catch (InvalidConfigurationException e) {
-			}
-		}
 		getConfig().options().copyDefaults(true);
 		saveConfig();
 		reloadConfig();
@@ -76,13 +52,16 @@ public class MyEvents extends JavaPlugin{
 		if(!getConfig().isSet("Language")){
 			getConfig().set("Language", "en");
 			saveConfig();
+		}else if(getResource(getConfig().getString("Language")+".yml") == null){
+			getConfig().set("Language", "en");
+			saveConfig();
 		}
 		if(!getConfig().isSet("Events")){
 			getConfig().set("Events", new HashMap<String,Object>());
 			saveConfig();
 		}
 		local = getConfig().getString("Language");
-		T = new Texts(YamlConfiguration.loadConfiguration(new File(getDataFolder()+File.separator+local+".yml")));
+		T = new Texts(YamlConfiguration.loadConfiguration(getResource(local+".yml")));
 		try{
 			Set<String> evs = getConfig().getConfigurationSection("Events").getKeys(false);
 			for(String ev : evs){
@@ -96,7 +75,7 @@ public class MyEvents extends JavaPlugin{
 		}catch(NullPointerException e){}
 		getServer().getPluginManager().registerEvents(new Listener(){
 			@SuppressWarnings("unused")
-			@EventHandler(priority = EventPriority.HIGH)
+			@EventHandler(priority = EventPriority.LOWEST)
 			public void onPlayerLogin(PlayerJoinEvent event){
 				handlePlayerLoginMsgs(event.getPlayer());
 			}
@@ -130,7 +109,6 @@ public class MyEvents extends JavaPlugin{
 		updater = new Updater(this);
 		getServer().getPluginManager().registerEvents(updater, this);
 		log.log(Level.INFO, "is enabled!");
-		getServer().getPluginManager().isPluginEnabled("");
 	}
 	
 	@Override
@@ -150,23 +128,25 @@ public class MyEvents extends JavaPlugin{
 			return true;
 		}
 		if(args.length == 0){
-			args = new String[]{T.help};
+			if(getPlayerRunningEvents(player) == 1)
+				args = new String[]{T.teleport, getPlayerRunningEvent(player).getName()};
+			else
+				args = new String[]{T.help};
 		}
 		if(command.getName().equalsIgnoreCase("event")){
 			if(args[0].equalsIgnoreCase(T.help)){
-				player.sendMessage(ChatColor.YELLOW+getName()+": "+T.help);
-				player.sendMessage(ChatColor.YELLOW+"-----------------------------------------------------");
-				player.sendMessage(ChatColor.YELLOW+"/event ...");
-				player.sendMessage(ChatColor.RED+"... "+T.list+ChatColor.GREEN+"    "+T.help_list);
-				player.sendMessage(ChatColor.RED+"... "+T.create+ChatColor.GREEN+"    "+T.help_create);
-				player.sendMessage(ChatColor.RED+"... "+T.destroy+ChatColor.GREEN+"    "+T.help_destroy);
-				player.sendMessage(ChatColor.RED+"... "+T.info+ChatColor.GREEN+"    "+T.help_info);
-				player.sendMessage(ChatColor.RED+"... "+T.logon+ChatColor.GREEN+"    "+T.help_logon);
-				player.sendMessage(ChatColor.RED+"... "+T.logoff+ChatColor.GREEN+"    "+T.help_logoff);
-				player.sendMessage(ChatColor.RED+"... "+T.teleport+ChatColor.GREEN+"    "+T.help_teleport);
-				player.sendMessage(ChatColor.YELLOW+T.moreinfos+" /event <"+T.action+">");
+				player.sendMessage(ChatColor.GOLD+getName()+": "+ChatColor.GRAY+T.help);
+				player.sendMessage(ChatColor.GRAY+"-----------------------------------------------------");
+				player.sendMessage(ChatColor.GOLD+"/event "+T.list+ChatColor.GRAY+"    "+T.help_list);
+				player.sendMessage(ChatColor.GOLD+"/event "+T.create+ChatColor.GRAY+"    "+T.help_create);
+				player.sendMessage(ChatColor.GOLD+"/event "+T.destroy+ChatColor.GRAY+"    "+T.help_destroy);
+				player.sendMessage(ChatColor.GOLD+"/event "+T.info+ChatColor.GRAY+"    "+T.help_info);
+				player.sendMessage(ChatColor.GOLD+"/event "+T.logon+ChatColor.GRAY+"    "+T.help_logon);
+				player.sendMessage(ChatColor.GOLD+"/event "+T.logoff+ChatColor.GRAY+"    "+T.help_logoff);
+				player.sendMessage(ChatColor.GOLD+"/event "+T.teleport+ChatColor.GRAY+"    "+T.help_teleport);
+				player.sendMessage(ChatColor.GRAY+T.moreinfos+ChatColor.GOLD+" /event <"+T.action+">");
 			}else if(args[0].equalsIgnoreCase(T.create)){
-				if(pc.has(player, "MyEvents.event.create"))
+				if(pc.has(player, "MyEvents.event.create")||pc.has(player, "MyEvents.admin"))
 					if(args.length >= 6){
 						if(!eventExists(args[1])){
 							String name = args[1];
@@ -179,13 +159,13 @@ public class MyEvents extends JavaPlugin{
 								minute = Integer.parseInt(args[3].split(":")[1]);
 								duration = Integer.parseInt(args[4]);
 							}catch(ArrayIndexOutOfBoundsException ex){
-								player.sendMessage(ChatColor.RED+T.wrongargs+" /event "+T.create+" "+args[1]+" <dd.mm.yyyy hh:mm> <"+T.duration+">"+getLastPartOfArray(args, 5));
+								player.sendMessage(ChatColor.RED+T.wrongargs+ChatColor.GRAY+" /event "+T.create+" "+args[1]+" <dd.mm.yyyy hh:mm> <"+T.duration+">"+getLastPartOfArray(args, 5));
 								return true;
 							}catch(NullPointerException ex){
-								player.sendMessage(ChatColor.RED+T.wrongargs+" /event "+T.create+" "+args[1]+" <dd.mm.yyyy hh:mm> <"+T.duration+">"+getLastPartOfArray(args, 5));
+								player.sendMessage(ChatColor.RED+T.wrongargs+ChatColor.GRAY+" /event "+T.create+" "+args[1]+" <dd.mm.yyyy hh:mm> <"+T.duration+">"+getLastPartOfArray(args, 5));
 								return true;
 							}catch(NumberFormatException ex){
-								player.sendMessage(ChatColor.RED+T.wrongargs+" /event "+T.create+" "+args[1]+" <dd.mm.yyyy hh:mm> <"+T.duration+">"+getLastPartOfArray(args, 5));
+								player.sendMessage(ChatColor.RED+T.wrongargs+ChatColor.GRAY+" /event "+T.create+" "+args[1]+" <dd.mm.yyyy hh:mm> <"+T.duration+">"+getLastPartOfArray(args, 5));
 								return true;
 							}
 							EventStorage created =  new EventStorage(player.getName(), name, new GregorianCalendar(year, month, dayOfMonth, hourOfDay, minute), player.getLocation(), getLastPartOfArray(args, 5), duration);
@@ -195,11 +175,11 @@ public class MyEvents extends JavaPlugin{
 						}else
 							player.sendMessage(ChatColor.RED+T.alreadyexists);
 					}else
-						player.sendMessage(ChatColor.RED+T.moreargs+" /event "+T.create+" <"+T.name+"> <"+T.date+"> <"+T.duration+"> <"+T.desc+">");
+						player.sendMessage(ChatColor.RED+T.moreargs+ChatColor.GRAY+" /event "+T.create+" <"+T.name+"> <"+T.date+"> <"+T.duration+"> <"+T.desc+">");
 				else
 					pc.sendNoPermMsg(player);
 			}else if(args[0].equalsIgnoreCase(T.destroy)){
-				if(pc.has(player, "MyEvents.event.destroy"))
+				if(pc.has(player, "MyEvents.event.destroy")||pc.has(player, "MyEvents.admin"))
 					if(args.length >= 2){
 						if(eventExists(args[1])){
 							getServer().getPluginManager().callEvent(new EventDestroyedEvent(events.remove(args[1]), System.currentTimeMillis()));
@@ -207,11 +187,11 @@ public class MyEvents extends JavaPlugin{
 						}else
 							player.sendMessage(ChatColor.RED+T.doesntexist);
 					}else
-						player.sendMessage(ChatColor.RED+T.moreargs+" /event "+T.destroy+" <"+T.name+">");
+						player.sendMessage(ChatColor.RED+T.moreargs+ChatColor.GRAY+" /event "+T.destroy+" <"+T.name+">");
 				else
 					pc.sendNoPermMsg(player);
 			}else if(args[0].equalsIgnoreCase(T.edit)){
-				if(pc.has(player, "MyEvents.event.edit"))
+				if(pc.has(player, "MyEvents.event.edit")||pc.has(player, "MyEvents.admin"))
 					if(args.length >= 2){
 						if(args[2].equalsIgnoreCase(T.dateEdit)){
 							if(args.length >= 3){
@@ -224,13 +204,13 @@ public class MyEvents extends JavaPlugin{
 										hourOfDay = Integer.parseInt(args[4].split(":")[0]);
 										minute = Integer.parseInt(args[4].split(":")[1]);
 									}catch(ArrayIndexOutOfBoundsException ex){
-										player.sendMessage(ChatColor.RED+T.wrongargs+" /event "+T.edit+" "+args[1]+" "+T.dateEdit+" <dd.mm.yyyy hh:mm>");
+										player.sendMessage(ChatColor.RED+T.wrongargs+ChatColor.GRAY+" /event "+T.edit+" "+args[1]+" "+T.dateEdit+" <dd.mm.yyyy hh:mm>");
 										return true;
 									}catch(NullPointerException ex){
-										player.sendMessage(ChatColor.RED+T.wrongargs+" /event "+T.edit+" "+args[1]+" "+T.dateEdit+" <dd.mm.yyyy hh:mm>");
+										player.sendMessage(ChatColor.RED+T.wrongargs+ChatColor.GRAY+" /event "+T.edit+" "+args[1]+" "+T.dateEdit+" <dd.mm.yyyy hh:mm>");
 										return true;
 									}catch(NumberFormatException ex){
-										player.sendMessage(ChatColor.RED+T.wrongargs+" /event "+T.edit+" "+args[1]+" "+T.dateEdit+" <dd.mm.yyyy hh:mm>");
+										player.sendMessage(ChatColor.RED+T.wrongargs+ChatColor.GRAY+" /event "+T.edit+" "+args[1]+" "+T.dateEdit+" <dd.mm.yyyy hh:mm>");
 										return true;
 									}
 									events.get(args[1]).setTime(new GregorianCalendar(year, month, dayOfMonth, hourOfDay, minute));
@@ -238,7 +218,7 @@ public class MyEvents extends JavaPlugin{
 								}else
 									player.sendMessage(ChatColor.RED+T.doesntexist);
 							}else
-								player.sendMessage(ChatColor.RED+T.moreargs+" /event "+T.edit+" <"+T.name+"> "+T.dateEdit+" <"+T.value+">");
+								player.sendMessage(ChatColor.RED+T.moreargs+ChatColor.GRAY+" /event "+T.edit+" <"+T.name+"> "+T.dateEdit+" <"+T.value+">");
 						}else if(args[2].equalsIgnoreCase(T.desc)){
 							if(args.length >= 3)
 								if(eventExists(args[1])){
@@ -248,7 +228,7 @@ public class MyEvents extends JavaPlugin{
 								}else
 									player.sendMessage(ChatColor.RED+T.doesntexist);
 							else
-								player.sendMessage(ChatColor.RED+T.moreargs+" /event "+T.edit+" <"+T.name+"> "+T.desc+" <"+T.value+">");
+								player.sendMessage(ChatColor.RED+T.moreargs+ChatColor.GRAY+" /event "+T.edit+" <"+T.name+"> "+T.desc+" <"+T.value+">");
 						}else if(args[2].equalsIgnoreCase(T.location)){
 							if(eventExists(args[1])){
 								events.get(args[1]).setLocation(player.getLocation());
@@ -263,39 +243,40 @@ public class MyEvents extends JavaPlugin{
 								}else
 									player.sendMessage(ChatColor.RED+T.doesntexist);
 							else
-								player.sendMessage(ChatColor.RED+T.moreargs+" /event "+T.edit+" <"+T.name+"> "+T.duration+" <"+T.value+">");
+								player.sendMessage(ChatColor.RED+T.moreargs+ChatColor.GRAY+" /event "+T.edit+" <"+T.name+"> "+T.duration+" <"+T.value+">");
 						}
 					}else
-						player.sendMessage(ChatColor.RED+T.moreargs+" /event "+T.edit+" <"+T.name+"> <"+T.action+"> [<"+T.value+">]");
+						player.sendMessage(ChatColor.RED+T.moreargs+ChatColor.GRAY+" /event "+T.edit+" <"+T.name+"> <"+T.action+"> [<"+T.value+">]");
 				else
 					pc.sendNoPermMsg(player);
 			}else if(args[0].equalsIgnoreCase(T.info)){
-				if(pc.has(player, "MyEvents.event.info"))
+				if(pc.has(player, "MyEvents.event.info")||pc.has(player, "MyEvents.use"))
 					if(args.length >= 2){
 						if(eventExists(args[1])){
 							EventStorage e = events.get(args[1]);
-							player.sendMessage(ChatColor.YELLOW+T.eventinfo+ChatColor.RED+e.getName()+ChatColor.YELLOW+" "+T.by+" "+ChatColor.RED+e.getCreator());
-							player.sendMessage(ChatColor.YELLOW+"-----------------------------------------------------");
-							player.sendMessage(ChatColor.YELLOW+T.desc+": "+ChatColor.RED+e.getDesc());
+							player.sendMessage(ChatColor.GRAY+T.eventinfo+ChatColor.GOLD+e.getName()+ChatColor.GRAY+" "+T.by+" "+ChatColor.GOLD+e.getCreator());
+							player.sendMessage(ChatColor.GOLD+"-----------------------------------------------------");
+							player.sendMessage(ChatColor.GOLD+T.desc+": "+ChatColor.GRAY+e.getDesc());
 							GregorianCalendar c = (GregorianCalendar) e.getTime().clone();
-							player.sendMessage(ChatColor.YELLOW+T.date+": "+ChatColor.RED+c.get(Calendar.DAY_OF_MONTH)+"."+(c.get(Calendar.MONTH)+1)+"."+c.get(Calendar.YEAR)+" "+c.get(Calendar.HOUR_OF_DAY)+":"+c.get(Calendar.MINUTE));
-							player.sendMessage(ChatColor.YELLOW+T.duration+": "+ChatColor.RED+e.getDuration()+" "+T.minutes);
+							player.sendMessage(ChatColor.GOLD+T.date+": "+ChatColor.GRAY+c.get(Calendar.DAY_OF_MONTH)+"."+(c.get(Calendar.MONTH)+1)+"."+c.get(Calendar.YEAR)+" "+c.get(Calendar.HOUR_OF_DAY)+":"+c.get(Calendar.MINUTE));
+							player.sendMessage(ChatColor.GOLD+T.duration+": "+ChatColor.GRAY+e.getDuration()+" "+T.minutes);
 							c.setTimeInMillis(c.getTimeInMillis()+e.getDuration()*1000*60);
-							player.sendMessage(ChatColor.YELLOW+T.end+": "+ChatColor.RED+c.get(Calendar.DAY_OF_MONTH)+"."+(c.get(Calendar.MONTH)+1)+"."+c.get(Calendar.YEAR)+" "+c.get(Calendar.HOUR_OF_DAY)+":"+c.get(Calendar.MINUTE));player.sendMessage(ChatColor.YELLOW+T.author+": "+ChatColor.RED+e.getCreator());
+							player.sendMessage(ChatColor.GOLD+T.end+": "+ChatColor.GRAY+c.get(Calendar.DAY_OF_MONTH)+"."+(c.get(Calendar.MONTH)+1)+"."+c.get(Calendar.YEAR)+" "+c.get(Calendar.HOUR_OF_DAY)+":"+c.get(Calendar.MINUTE));
+							player.sendMessage(ChatColor.GOLD+T.author+": "+ChatColor.GRAY+e.getCreator());
 							Location l = e.getLocation();
-							player.sendMessage(ChatColor.YELLOW+T.location+":"+ChatColor.RED+" X="+l.getX()+" Y="+l.getY()+" Z="+l.getZ());
+							player.sendMessage(ChatColor.GOLD+T.location+":"+ChatColor.GRAY+" X="+(int)l.getX()+" Y="+(int)l.getY()+" Z="+(int)l.getZ());
 							if(e.isParticipant(player.getName()))
-								player.sendMessage(ChatColor.YELLOW+T.status+": "+ChatColor.GREEN+T.participating);
+								player.sendMessage(ChatColor.GOLD+T.status+": "+ChatColor.GREEN+T.participating);
 							else
-								player.sendMessage(ChatColor.YELLOW+T.status+": "+ChatColor.RED+T.notparticipating);
+								player.sendMessage(ChatColor.GOLD+T.status+": "+ChatColor.RED+T.notparticipating);
 						}else
 							player.sendMessage(ChatColor.RED+T.doesntexist);
 					}else
-						player.sendMessage(ChatColor.RED+T.moreargs+" /event "+T.info+" <"+T.name+">");
+						player.sendMessage(ChatColor.RED+T.moreargs+ChatColor.GRAY+" /event "+T.info+" <"+T.name+">");
 				else
 					pc.sendNoPermMsg(player);
 			}else if(args[0].equalsIgnoreCase(T.teleport)){
-				if(pc.has(player, "MyEvents.event.teleport"))
+				if(pc.has(player, "MyEvents.event.teleport")||pc.has(player, "MyEvents.use"))
 					if(args.length >= 2){
 						if(eventExists(args[1])){
 							EventStorage e = events.get(args[1]);
@@ -318,11 +299,11 @@ public class MyEvents extends JavaPlugin{
 						}else
 							player.sendMessage(ChatColor.RED+T.doesntexist);
 					}else
-						player.sendMessage(ChatColor.RED+T.moreargs+" /event "+T.teleport+" <"+T.name+">");
+						player.sendMessage(ChatColor.RED+T.moreargs+ChatColor.GRAY+" /event "+T.teleport+" <"+T.name+">");
 				else
 					pc.sendNoPermMsg(player);
 			}else if(args[0].equalsIgnoreCase(T.logon)){
-				if(pc.has(player, "MyEvents.event.logon"))
+				if(pc.has(player, "MyEvents.event.logon")||pc.has(player, "MyEvents.use"))
 					if(args.length >= 2){
 						if(eventExists(args[1])){
 							EventStorage e = events.get(args[1]);
@@ -341,11 +322,11 @@ public class MyEvents extends JavaPlugin{
 						}else
 							player.sendMessage(ChatColor.RED+T.doesntexist);
 					}else
-						player.sendMessage(ChatColor.RED+T.moreargs+" /event "+T.logon+" <"+T.name+">");
+						player.sendMessage(ChatColor.RED+T.moreargs+ChatColor.GRAY+" /event "+T.logon+" <"+T.name+">");
 				else
 					pc.sendNoPermMsg(player);
 			}else if(args[0].equalsIgnoreCase(T.logoff)){
-				if(pc.has(player, "MyEvents.event.logoff"))
+				if(pc.has(player, "MyEvents.event.logoff")||pc.has(player, "MyEvents.use"))
 					if(args.length >= 2){
 						if(eventExists(args[1])){
 							EventStorage e = events.get(args[1]);
@@ -361,11 +342,11 @@ public class MyEvents extends JavaPlugin{
 						}else
 							player.sendMessage(ChatColor.RED+T.doesntexist);
 					}else
-						player.sendMessage(ChatColor.RED+T.moreargs+" /event "+T.logoff+" <"+T.name+">");
+						player.sendMessage(ChatColor.RED+T.moreargs+ChatColor.GRAY+" /event "+T.logoff+" <"+T.name+">");
 				else
 					pc.sendNoPermMsg(player);
 			}else if(args[0].equalsIgnoreCase(T.list)){
-				if(pc.has(player, "MyEvents.event.list")){
+				if(pc.has(player, "MyEvents.event.list")||pc.has(player, "MyEvents.use")){
 					ArrayList<EventStorage> evs = new ArrayList<EventStorage>(events.values());
 					Collections.sort(evs, new Comparator<EventStorage>(){
 						@Override
@@ -379,25 +360,25 @@ public class MyEvents extends JavaPlugin{
 							}
 						}
 					});
-					player.sendMessage(ChatColor.YELLOW+T.listheader);
-					int i = 0;
+					player.sendMessage(ChatColor.GOLD+T.listheader);
+					int i = 1;
 					for(EventStorage e : evs){
-						player.sendMessage(ChatColor.YELLOW+""+i+": "+ChatColor.RED+e.getName()+" "+ChatColor.YELLOW+T.by+" "+ChatColor.RED+e.getCreator());
+						player.sendMessage(ChatColor.GRAY+""+i+": "+ChatColor.GOLD+e.getName()+" "+ChatColor.GRAY+T.by+" "+ChatColor.GOLD+e.getCreator());
 						i++;
 					}
-					player.sendMessage(ChatColor.YELLOW+T.moreinfos+" /event "+T.info+" <"+T.name+">");
+					player.sendMessage(ChatColor.GRAY+T.moreinfos+ChatColor.GOLD+" /event "+T.info+" <"+T.name+">");
 				}else
 					pc.sendNoPermMsg(player);
 			}else if(args[0].equalsIgnoreCase(T.participants)){
-				if(pc.has(player, "MyEvents.event.participants"))
+				if(pc.has(player, "MyEvents.event.participants")||pc.has(player, "MyEvents.use"))
 					if(args.length >= 2){
 						if(eventExists(args[1])){
-							player.sendMessage(ChatColor.YELLOW+T.participantslist);
-							player.sendMessage(ChatColor.GREEN+events.get(args[1]).getParticipants().toString());
+							player.sendMessage(ChatColor.GRAY+T.participantslist);
+							player.sendMessage(ChatColor.GREEN+formatParticipants(events.get(args[1]).getParticipants()));
 						}else
 							player.sendMessage(ChatColor.RED+T.doesntexist);
 					}else
-						player.sendMessage(ChatColor.RED+T.moreargs+" /event "+T.participants+" <"+T.name+">");
+						player.sendMessage(ChatColor.RED+T.moreargs+ChatColor.GRAY+" /event "+T.participants+" <"+T.name+">");
 				else
 					pc.sendNoPermMsg(player);
 			}
@@ -405,13 +386,27 @@ public class MyEvents extends JavaPlugin{
 		return true;
 	}
 	
+	private String formatParticipants(LinkedList<String> participants){
+		if(participants.size() == 0)
+			return ChatColor.GRAY+"-----";
+		else{
+			String temp = "";
+			for(String participant : participants)
+				temp += ", "+ChatColor.GOLD+participant+ChatColor.GRAY;
+			return temp.substring(2, temp.length());
+		}
+	}
+	
 	private void handlePlayerLoginMsgs(Player player){
 		for(EventStorage e : events.values()){
 			if(e.isParticipant(player.getName()))
-				if(e.isRunning()){
+				if(!e.isRunning()){
 					if(!e.hasTeleported(player.getName())){
-						player.sendMessage(ChatColor.DARK_PURPLE+""+T.notification_start+" "+ChatColor.RED+e.getName());
-						player.sendMessage(ChatColor.LIGHT_PURPLE+T.tpwith+" /event "+T.teleport+" "+e.getName());
+						player.sendMessage(ChatColor.BOLD+T.notification_start+" "+ChatColor.GOLD+ChatColor.BOLD+e.getName());
+						if(getPlayerRunningEvents(player) == 1)
+							player.sendMessage(T.tpwith+ChatColor.GOLD+" /event");
+						else
+							player.sendMessage(T.tpwith+ChatColor.GOLD+" /event "+T.teleport+" "+e.getName());
 					}
 				}
 		}
@@ -440,14 +435,34 @@ public class MyEvents extends JavaPlugin{
 	
 	private void notifyPlayers(EventStorage e){
 		LinkedList<String> players = e.getParticipants();
-		for(String player : players){
-			OfflinePlayer pl = getServer().getOfflinePlayer(player);
-			if(pl.isOnline()&&!e.hasTeleported(player)){
-				Player plO = pl.getPlayer();
-				plO.sendMessage(ChatColor.DARK_PURPLE+""+T.notification_start+" "+ChatColor.RED+e.getName());
-				plO.sendMessage(ChatColor.LIGHT_PURPLE+T.tpwith+" /event "+T.teleport+" "+e.getName());
+		for(String pl : players){
+			OfflinePlayer opl = getServer().getOfflinePlayer(pl);
+			if(opl.isOnline()&&!e.hasTeleported(pl)){
+				Player player = opl.getPlayer();
+				player.sendMessage(ChatColor.BOLD+T.notification_start+" "+ChatColor.GOLD+ChatColor.BOLD+e.getName());
+				if(getPlayerRunningEvents(player) == 1)
+					player.sendMessage(T.tpwith+ChatColor.GOLD+" /event");
+				else
+					player.sendMessage(T.tpwith+ChatColor.GOLD+" /event "+T.teleport+" "+e.getName());
 			}
 		}
+	}
+	
+	private int getPlayerRunningEvents(Player player){
+		int temp = 0;
+		for(EventStorage e : events.values())
+			if(e.isParticipant(player.getName()))
+				if(e.isRunning())
+					temp++;
+		return temp;
+	}
+	
+	private EventStorage getPlayerRunningEvent(Player player){
+		for(EventStorage e : events.values())
+			if(e.isParticipant(player.getName()))
+				if(e.isRunning())
+					return e;
+		return null;
 	}
 	
 	/**
