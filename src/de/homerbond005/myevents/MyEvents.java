@@ -33,8 +33,9 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.mcstats.Metrics;
+import org.mcstats.Metrics.Graph;
 
-import de.homerbond005.myevents.Metrics.Graph;
 import de.homerbond005.myevents.api.EventCreatedEvent;
 import de.homerbond005.myevents.api.EventDestroyedEvent;
 import de.homerbond005.myevents.api.EventStartedEvent;
@@ -139,7 +140,7 @@ public class MyEvents extends JavaPlugin {
 		if (args.length == 0) {
 			if (getPlayerRunningEvents(player) == 1)
 				args = new String[] { T.teleport,
-						getPlayerRunningEvent(player).getName() };
+					getPlayerRunningEvent(player).getName() };
 			else
 				args = new String[] { T.help };
 		}
